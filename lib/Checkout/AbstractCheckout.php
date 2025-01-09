@@ -13,11 +13,14 @@ use JTL\Catalog\Product\Artikel;
 use JTL\Catalog\Product\EigenschaftWert;
 use JTL\Catalog\Product\Preise;
 use JTL\Checkout\Bestellung;
+use JTL\Checkout\OrderHandler;
+use JTL\Checkout\StockUpdater;
 use JTL\Checkout\ZahlungsLog;
 use JTL\Customer\Customer;
 use JTL\DB\ReturnType;
 use JTL\Exceptions\CircularReferenceException;
 use JTL\Exceptions\ServiceNotFoundException;
+use JTL\Helpers\PaymentMethod;
 use JTL\Helpers\Product;
 use JTL\Mail\Mail\Mail;
 use JTL\Mail\Mailer;
@@ -31,7 +34,6 @@ use Mollie\Api\Resources\Order;
 use Mollie\Api\Resources\Payment;
 use Mollie\Api\Types\OrderStatus;
 use Mollie\Api\Types\PaymentStatus;
-use PaymentMethod;
 use Plugin\ws5_mollie\lib\Locale;
 use Plugin\ws5_mollie\lib\Model\OrderModel;
 use Plugin\ws5_mollie\lib\Model\QueueModel;
@@ -133,10 +135,8 @@ abstract class AbstractCheckout
                         $api->getClient()->orders->get($id, ['embed' => 'payments']);
 
                     if (in_array($mollie->status, [OrderStatus::STATUS_PENDING, OrderStatus::STATUS_AUTHORIZED, OrderStatus::STATUS_PAID], true)) {
-                        require_once PFAD_ROOT . PFAD_INCLUDES . 'bestellabschluss_inc.php';
-                        require_once PFAD_ROOT . PFAD_INCLUDES . 'mailTools.php';
-
-                        $order = getOrderHandler()->finalizeOrder();
+                        $orderHandler  = new OrderHandler(Shop::Container()->getDB(), Frontend::getCustomer(), Frontend::getCart());
+                        $order = $orderHandler->finalizeOrder();
                         $session->cleanUp();
                         $paymentSession->nBezahlt     = 1;
                         $paymentSession->dZeitBezahlt = 'now()';
@@ -710,7 +710,6 @@ abstract class AbstractCheckout
     public function storno(): void
     {
         if (in_array((int)$this->getBestellung()->cStatus, [BESTELLUNG_STATUS_OFFEN, BESTELLUNG_STATUS_IN_BEARBEITUNG], true)) {
-            require_once PFAD_ROOT . PFAD_INCLUDES . 'bestellabschluss_inc.php';
 
             $log                   = [];
             $conf                  = Shop::getSettings([CONF_GLOBAL]);
@@ -723,7 +722,7 @@ abstract class AbstractCheckout
             }
             $log[] = sprintf("Cancel order '%s'.", $this->getBestellung()->cBestellNr);
 
-            if (PluginHelper::getDB()->executeQueryPrepared('UPDATE tbestellung SET cAbgeholt = "N", cStatus = :cStatus WHERE kBestellung = :kBestellung', [':cStatus' => '-1', ':kBestellung' => $this->getBestellung()->kBestellung], 3)) {
+            if (PluginHelper::getDB()->executeQueryPrepared('UPDATE tbestellung SET cStatus = :cStatus WHERE kBestellung = :kBestellung', [':cStatus' => '-1', ':kBestellung' => $this->getBestellung()->kBestellung], 3)) {
                 $this->Log(implode('\n', $log));
             }
         }
@@ -733,6 +732,7 @@ abstract class AbstractCheckout
     {
         $inventory = $product->fLagerbestand;
         $db = PluginHelper::getDB();
+        $stockUpdater = new StockUpdater(Shop::Container()->getDB(), Frontend::getCustomer(), Frontend::getCart());
         if ($product->cLagerBeachten !== 'Y') {
             return $inventory;
         }
@@ -756,12 +756,12 @@ abstract class AbstractCheckout
                     ReturnType::DEFAULT
                 );
             }
-            getStockUpdater()->updateProductStockLevel($product->kArtikel, $amount, $product->fPackeinheit);
+            $stockUpdater->updateProductStockLevel($product->kArtikel, $amount, $product->fPackeinheit);
         } elseif ($product->fPackeinheit > 0) {
             if ($product->kStueckliste > 0) {
-                $inventory = getStockUpdater()->updateBOMStockLevel($product, $amount);
+                $inventory = $stockUpdater->updateBOMStockLevel($product, $amount);
             } else {
-                getStockUpdater()->updateProductStockLevel($product->kArtikel, $amount, $product->fPackeinheit);
+                $stockUpdater->updateProductStockLevel($product->kArtikel, $amount, $product->fPackeinheit);
                 $tmpProduct = $db->select(
                     'tartikel',
                     'kArtikel',
@@ -778,7 +778,7 @@ abstract class AbstractCheckout
                 }
                 // Stücklisten Komponente
                 if (Product::isStuecklisteKomponente($product->kArtikel)) {
-                    getStockUpdater()->updateBOMStock(
+                    $stockUpdater->updateBOMStock(
                         $product->kArtikel,
                         $inventory,
                         $product->cLagerKleinerNull === 'Y'
@@ -788,7 +788,7 @@ abstract class AbstractCheckout
             // Aktualisiere Merkmale in tartikelmerkmal vom Vaterartikel
             if ($product->kVaterArtikel > 0) {
                 Artikel::beachteVarikombiMerkmalLagerbestand($product->kVaterArtikel, $productFilter);
-                getStockUpdater()->updateProductStockLevel($product->kVaterArtikel, $amount, $product->fPackeinheit);
+                $stockUpdater->updateProductStockLevel($product->kVaterArtikel, $amount, $product->fPackeinheit);
             }
         }
 
