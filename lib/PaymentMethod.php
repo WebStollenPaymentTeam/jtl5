@@ -11,6 +11,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Exception;
 use JTL\Alert\Alert;
+use JTL\CheckBox;
 use JTL\Checkout\Bestellung;
 use JTL\Exceptions\CircularReferenceException;
 use JTL\Exceptions\ServiceNotFoundException;
@@ -249,6 +250,11 @@ abstract class PaymentMethod extends Method
                 $url = $mOrder->getCheckoutUrl();
             }
 
+            if ($this->duringCheckout) {
+                // Handle Checkboxes bei Bezahlung nach Bestellabschluss, da diese durch POST parameter getriggert werden, die beim Redirect verloren gehen
+                self::handleCheckboxes($order);
+            }
+
             try {
                 if ($order->kBestellung > 0 && method_exists($this, 'generatePUI') && ($pui = $this->generatePUI($checkout))) {
                     $order->cPUIZahlungsdaten = $pui;
@@ -307,5 +313,23 @@ abstract class PaymentMethod extends Method
             $this->doLog("ERROR: mollie::handleNotification: Bestellung '$order->cBestellNr': {$e->getMessage()}", LOGLEVEL_ERROR);
             Shop::Container()->getBackendLogService()->critical($e->getMessage(), $_REQUEST);
         }
+    }
+
+    private static function handleCheckboxes(Bestellung $order): void
+    {
+        /**
+         * @var \JTL\Customer\Customer $customer
+         */
+        $customer = $_SESSION['Kunde'];
+        $customerGroupID   = $customer->getGroupID();
+        $checkbox          = new CheckBox(0, PluginHelper::getDB());
+        $checkbox->triggerSpecialFunction(
+            \CHECKBOX_ORT_BESTELLABSCHLUSS,
+            $customerGroupID,
+            true,
+            $_POST,
+            ['oBestellung' => $order, 'oKunde' => $customer]
+        );
+
     }
 }

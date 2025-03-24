@@ -297,6 +297,16 @@
     "selectItems": [
       {"value": "sync" , "label": "Synchron"},
       {"value": "async" , "label": "Asynchron"}
-    ]
+    ],
+    "customChildrenActiveValue": "async"
+  },
+  {
+    "id": "asyncModulo",
+    "label": "Anstoßen der Queue bei jedem X-ten Aufruf",
+    "description": "In welchem Intervall soll der Code für die asynchrone Abarbeitung der Queue auf der Shopseite ausgspielt werden? (z.B.: 1 = bei jedem Shopaufruf, 10 = bei jedem 10. Shopaufruf, usw.)",
+    "settingType": "input",
+    "type": "int",
+    "defaultValue": 1,
+    "childOf": "queue"
   }
 ]

@@ -9,6 +9,7 @@ namespace Plugin\ws5_mollie\paymentmethod;
 
 use JTL\Checkout\Bestellung;
 use Plugin\ws5_mollie\lib\PaymentMethod;
+use stdClass;
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
@@ -20,6 +21,8 @@ class Przelewy24 extends PaymentMethod
 
     public function getPaymentOptions(Bestellung $order, $apiType): array
     {
-        return $apiType === 'payment' ? ['billingEmail' => $order->oRechnungsadresse->cMail] : [];
+        $billingAddress = new stdClass();
+        $billingAddress->email = $order->oRechnungsadresse->cMail;
+        return $apiType === 'payment' ? ['billingAddress' => $billingAddress] : [];
     }
 }

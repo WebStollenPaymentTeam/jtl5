@@ -8,7 +8,7 @@
     <ShopVersion>5.2.0</ShopVersion>
     <PluginID>ws5_mollie</PluginID>
     <CreateDate>2023-02-13</CreateDate>
-    <Version>1.10.1</Version>
+    <Version>1.11.0</Version>
     <ExsID>689388c6-9f04-4648-b516-e67d96b0dc1d</ExsID>
     <Install>
         <Hooks>
@@ -1383,6 +1383,30 @@
                 <VariableLocalized iso="ENG"><![CDATA[Something went wrong with the payment via Mollie. Please try again.]]></VariableLocalized>
                 <VariableLocalized iso="FRE"><![CDATA[Quelque chose s'est mal passé lors du paiement via Mollie. Veuillez réessayer.]]></VariableLocalized>
                 <VariableLocalized iso="ITA"><![CDATA[Qualcosa è andato storto con il pagamento tramite Mollie. Si prega di riprovare.]]></VariableLocalized>
+            </Variable>
+            <Variable>
+                <Name>paymentProcessPendingHeading</Name>
+                <Description>Überschrift auf der Ladeseite, während mollie die Zahlung verarbeitet.</Description>
+                <VariableLocalized iso="GER"><![CDATA[Ihre Zahlung wird verarbeitet]]></VariableLocalized>
+                <VariableLocalized iso="ENG"><![CDATA[Your payment is being processed]]></VariableLocalized>
+                <VariableLocalized iso="FRE"><![CDATA[Your payment is being processed]]></VariableLocalized>
+                <VariableLocalized iso="ITA"><![CDATA[Your payment is being processed]]></VariableLocalized>
+            </Variable>
+            <Variable>
+                <Name>paymentProcessPendingText</Name>
+                <Description>Text auf der Ladeseite, während mollie die Zahlung verarbeitet.</Description>
+                <VariableLocalized iso="GER"><![CDATA[Dies kann einige Sekunden dauern.]]></VariableLocalized>
+                <VariableLocalized iso="ENG"><![CDATA[This may take a few seconds.]]></VariableLocalized>
+                <VariableLocalized iso="FRE"><![CDATA[This may take a few seconds.]]></VariableLocalized>
+                <VariableLocalized iso="ITA"><![CDATA[This may take a few seconds.]]></VariableLocalized>
+            </Variable>
+            <Variable>
+                <Name>paymentProcessFinishedText</Name>
+                <Description>Text auf der Ladeseite, nach Ablauf der Wartezeit.</Description>
+                <VariableLocalized iso="GER"><![CDATA[Sie können dieses Fenster nun schließen, die Verarbeitung erfolgt im Hintergrund. Wir benachrichtigen Sie per E-Mail über den Zahlungsstatus und den weiteren Verlauf.]]></VariableLocalized>
+                <VariableLocalized iso="ENG"><![CDATA[You can now close this window, processing will take place in the background. We will notify you by e-mail about the payment status and further progress.]]></VariableLocalized>
+                <VariableLocalized iso="FRE"><![CDATA[You can now close this window, processing will take place in the background. We will notify you by e-mail about the payment status and further progress.]]></VariableLocalized>
+                <VariableLocalized iso="ITA"><![CDATA[You can now close this window, processing will take place in the background. We will notify you by e-mail about the payment status and further progress.]]></VariableLocalized>
             </Variable>
         </Locales>
         <Emailtemplate>

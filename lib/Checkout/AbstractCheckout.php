@@ -110,6 +110,8 @@ abstract class AbstractCheckout
     public static function finalizeOrder(string $sessionHash, string $id, bool $test): void
     {
         $logger = Shop::Container()->getLogService();
+        Shop::Container()->getLogService()->debug("Mollie - Webhook called for order: " . $sessionHash);
+        $startTime = microtime(true);
 
         try {
             if ($paymentSession = PluginHelper::getDB()->select('tzahlungsession', 'cZahlungsID', $sessionHash)) {
@@ -140,6 +142,10 @@ abstract class AbstractCheckout
                         $session->cleanUp();
                         $paymentSession->nBezahlt     = 1;
                         $paymentSession->dZeitBezahlt = 'now()';
+                    } else if (in_array($mollie->status, [OrderStatus::STATUS_CANCELED, OrderStatus::STATUS_EXPIRED, 'failed'], true)) {
+                        Shop::Container()->getLogService()->debug("Mollie - Order was canceled by Webhook Call: " . $sessionHash);
+                        PluginHelper::getDB()->executeQueryPrepared('UPDATE xplugin_ws5_mollie_orders SET cStatus = :status WHERE cOrderId = :id', [':status' => $mollie->status, ':id' => $mollie->id]);
+                        throw new Exception('Mollie Status invalid: ' . $mollie->status . '\n' . print_r([$sessionHash, $id], 1));
                     } else {
                         throw new Exception('Mollie Status invalid: ' . $mollie->status . '\n' . print_r([$sessionHash, $id], 1));
                     }
@@ -147,6 +153,13 @@ abstract class AbstractCheckout
                     if ($order->kBestellung) {
                         $paymentSession->kBestellung = $order->kBestellung;
                         PluginHelper::getDB()->update('tzahlungsession', 'cZahlungsID', $sessionHash, $paymentSession);
+
+                        // End time
+                        $endTime = microtime(true);
+
+                        // Calculate execution time in seconds
+                        $executionTime = $endTime - $startTime;
+                        Shop::Container()->getLogService()->debug("Mollie - Order finalized in DB. Execution Time: " . number_format($executionTime, 6) . " seconds");
 
                         try {
                             $checkout = self::fromID($id, false, $order);
@@ -172,6 +185,7 @@ abstract class AbstractCheckout
                         $checkout->updateOrderNumber()
                             ->setExpirationDate()
                             ->handleNotification($sessionHash);
+
                     } else {
                         throw new Exception(sprintf('Bestellung nicht finalisiert: %s', print_r($order, 1)));
                     }
@@ -493,7 +507,7 @@ abstract class AbstractCheckout
         if ($checkZA) {
             $res = PluginHelper::getDB()->executeQueryPrepared('SELECT * FROM tzahlungsart WHERE cModulId LIKE :cModulId AND kZahlungsart = :kZahlungsart', [
                 ':kZahlungsart' => $kBestellung,
-                ':cModulId' => 'kPlugin_' . PluginHelper::getPlugin()->getID() . '%'
+                ':cModulId' => 'kPlugin_' . PluginHelper::getPlugin()->getID() . '\_%'
             ], 1);
 
             return (bool)$res;
@@ -557,7 +571,7 @@ abstract class AbstractCheckout
         }
         // TODO: DOKU
         ifndef('MOLLIE_REMINDER_LIMIT_DAYS', 7);
-        $remindables = PluginHelper::getDB()->executeQueryPrepared("SELECT kId FROM xplugin_ws5_mollie_orders WHERE (dReminder IS NULL OR dReminder = '0000-00-00 00:00:00') AND dCreated > NOW() - INTERVAL " . MOLLIE_REMINDER_LIMIT_DAYS . " DAY AND dCreated < NOW() - INTERVAL :d MINUTE AND cStatus IN ('created','open', 'expired', 'failed', 'canceled')", [
+        $remindables = PluginHelper::getDB()->executeQueryPrepared("SELECT kId FROM xplugin_ws5_mollie_orders mo LEFT JOIN tbestellung tb ON mo.kBestellung = tb.kBestellung WHERE tb.cStatus != -1 AND (mo.dReminder IS NULL OR mo.dReminder = '0000-00-00 00:00:00') AND mo.dCreated > NOW() - INTERVAL " . MOLLIE_REMINDER_LIMIT_DAYS . " DAY AND mo.dCreated < NOW() - INTERVAL :d MINUTE AND mo.cStatus IN ('created','open', 'expired', 'failed', 'canceled')", [
             ':d' => $reminder
         ], 2);
         foreach ($remindables as $remindable) {
@@ -651,7 +665,6 @@ abstract class AbstractCheckout
             ) {
                 $this->method = $this->getPaymentMethod()::METHOD;
             }
-
 
             $this->redirectUrl = $this->getPaymentMethod()->duringCheckout ?
             Shop::Container()->getLinkService()->getStaticRoute('bestellabschluss.php') . "?" . http_build_query(['hash' => $this->getHash()]) :

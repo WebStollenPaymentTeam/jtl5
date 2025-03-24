@@ -17,8 +17,7 @@ class Billie extends PaymentMethod
          * optional parameters could be added
          * registrationNumber, vatNumber, entityType
          */
-        $paymentOptions = [];
-        return $paymentOptions;
+        return [];
     }
 
     public function isSelectable(): bool
