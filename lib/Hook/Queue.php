@@ -9,15 +9,18 @@ namespace Plugin\ws5_mollie\lib\Hook;
 
 use Exception;
 use JTL\Alert\Alert;
+use JTL\Checkout\Bestellung;
 use JTL\Exceptions\CircularReferenceException;
 use JTL\Exceptions\ServiceNotFoundException;
 use JTL\Helpers\Text;
 use JTL\Shop;
 use Mollie\Api\Types\OrderStatus;
+use Mollie\Api\Types\PaymentStatus;
 use Plugin\ws5_mollie\lib\Checkout\AbstractCheckout;
 use Plugin\ws5_mollie\lib\Checkout\OrderCheckout;
 use Plugin\ws5_mollie\lib\Checkout\PaymentCheckout;
 use Plugin\ws5_mollie\lib\Model\QueueModel;
+use Plugin\ws5_mollie\lib\MollieAPI;
 use Plugin\ws5_mollie\lib\PluginHelper;
 use RuntimeException;
 use WS\JTL5\V1_0_16\Hook\AbstractHook;
@@ -159,6 +162,28 @@ class Queue extends AbstractHook
                     exit;
                 } else {
                     $order = PluginHelper::getDB()->select('xplugin_ws5_mollie_orders', 'cHash', '_' . $sessionHash);
+
+                    if (str_starts_with($order->cOrderId, 'ord_')) {
+                        // Order was cancelled or failed, but webhook was not called because it was an order via OrderAPI (return Status 422 Unprocessable Content): customer will be redirected to error url
+                        $api     = new MollieAPI(true);
+                        $mollie  = $api->getClient()->orders->get($order->cOrderId, ['embed' => 'payments']);
+                        foreach ($mollie->payments() as $payment) {
+                            if (in_array($payment->status, [PaymentStatus::STATUS_CANCELED, PaymentStatus::STATUS_EXPIRED, PaymentStatus::STATUS_FAILED])) {
+                                // Order was cancelled or failed (return Status 422 Unprocessable Content): customer will be redirected to error url
+                                http_response_code(422);
+                                $response = [
+                                    "status" => 422,
+                                    "data" => [
+                                        "message" => "Order cancelled.",
+                                        "success" => false,
+                                    ]
+                                ];
+                                echo json_encode($response);
+                                exit;
+                            }
+                        }
+                    }
+
                     if (in_array($order->cStatus, [OrderStatus::STATUS_CANCELED, OrderStatus::STATUS_EXPIRED, 'failed'], true)) {
                         // Order was cancelled or failed (return Status 422 Unprocessable Content): customer will be redirected to error url
                         http_response_code(422);

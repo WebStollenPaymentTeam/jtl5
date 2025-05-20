@@ -140,7 +140,6 @@ class OrderCheckout extends AbstractCheckout
                 throw new RuntimeException(sprintf('Mollie-Order \'%s\' konnte nicht geladen werden: %s', $this->getModel()->cOrderId, $e->getMessage()));
             }
         }
-
         return $this->order;
     }
 
@@ -320,14 +319,18 @@ class OrderCheckout extends AbstractCheckout
     public function cancelOrRefund(): string
     {
         if ((int)$this->getBestellung()->cStatus === BESTELLUNG_STATUS_STORNO) {
-            if ($this->getMollie()->isCancelable) {
-                $res = $this->getMollie()->cancel();
+            if (!is_null($this->getMollie())) {
+                if ($this->getMollie()->isCancelable) {
+                    $res = $this->getMollie()->cancel();
 
-                return 'Order cancelled, Status: ' . $res->status;
+                    return 'Order cancelled, Status: ' . $res->status;
+                }
+                $res = $this->getMollie()->refundAll();
+
+                return 'Order Refund initiiert, Status: ' . $res->status;
+            } else {
+                throw new Exception('Mollie Order zur Bestellung (' .  $this->getBestellung()->cBestellNr  . ') konnte nicht geladen werden.');
             }
-            $res = $this->getMollie()->refundAll();
-
-            return 'Order Refund initiiert, Status: ' . $res->status;
         }
 
         throw new Exception('Bestellung ist derzeit nicht storniert, Status: ' . $this->getBestellung()->cStatus);

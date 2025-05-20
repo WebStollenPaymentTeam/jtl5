@@ -144,19 +144,24 @@ class PaymentCheckout extends AbstractCheckout
      * @throws ApiException
      * @throws IncompatiblePlatform
      * @throws RuntimeException
+     * @throws Exception
      * @return string
      */
     public function cancelOrRefund(): string
     {
         if ((int)$this->getBestellung()->cStatus === BESTELLUNG_STATUS_STORNO) {
-            if ($this->getMollie()->isCancelable) {
-                $res = $this->getAPI()->getClient()->payments->cancel($this->getMollie()->id);
+            if (!is_null($this->getMollie())) {
+                if ($this->getMollie()->isCancelable) {
+                    $res = $this->getAPI()->getClient()->payments->cancel($this->getMollie()->id);
 
-                return 'Payment cancelled, Status: ' . $res->status;
+                    return 'Payment cancelled, Status: ' . $res->status;
+                }
+                $res = $this->getAPI()->getClient()->payments->refund($this->getMollie(), ['amount' => $this->getMollie()->amount]);
+
+                return 'Payment Refund initiiert, Status: ' . $res->status;
+            } else {
+                throw new Exception('Mollie Payment zur Bestellung (' .  $this->getBestellung()->cBestellNr  . ') konnte nicht geladen werden.');
             }
-            $res = $this->getAPI()->getClient()->payments->refund($this->getMollie(), ['amount' => $this->getMollie()->amount]);
-
-            return 'Payment Refund initiiert, Status: ' . $res->status;
         }
 
         throw new RuntimeException('Bestellung ist derzeit nicht storniert, Status: ' . $this->getBestellung()->cStatus);

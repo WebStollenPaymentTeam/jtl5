@@ -12,7 +12,8 @@
 <body>
 <div id="content">
     <div id="loading-screen">
-        <div class="spinner"></div>
+        <div id="paymentSpinner" class="spinner"></div>
+        <div id="paymentCheckmark" class="checkmark" style="display: none"></div>
     </div>
     <div>
         <h2>{$paymentProcessPendingHeading}</h2>
@@ -27,6 +28,8 @@
         function updateContent() {
             document.getElementById('paymentPending').style.display = 'none';
             document.getElementById('paymentProcessed').style.display = 'block';
+            document.getElementById('paymentSpinner').style.display = 'none';
+            document.getElementById('paymentCheckmark').style.display = 'block';
         }
 
         if (!hash) {
@@ -92,6 +95,27 @@
             width: 50px;
             height: 50px;
             animation: spin 1.5s linear infinite;
+        }
+
+        .checkmark {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: #28a745;
+            position: relative;
+        }
+
+        .checkmark::before {
+            content: '';
+            position: absolute;
+            top: 13px;
+            left: 19px;
+            width: 7px;
+            height: 15px;
+            border: solid white;
+            border-width: 0 5px 5px 0;
+            transform: rotate(45deg);
         }
 
         @keyframes spin {
