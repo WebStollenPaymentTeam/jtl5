@@ -18,6 +18,7 @@ class KBC extends PaymentMethod
 
     public function getPaymentOptions(Bestellung $order, $apiType): array
     {
+        // Sets description of KBC payments and overwrites the value that is specified in plugin settings as description for all payments - for "Bezahlung vor Bestellschluss" this contains just the preliminary order number and it is overwritten by updateOrderNumber() later again
         return $apiType === 'payment' ? ['description' => substr($order->cBestellNr, 0, 13)] : [];
     }
 }

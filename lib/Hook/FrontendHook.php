@@ -11,7 +11,7 @@ use Exception;
 use JTL\Shop;
 use Plugin\ws5_mollie\lib\Model\QueueModel;
 use Plugin\ws5_mollie\lib\PluginHelper;
-use WS\JTL5\V1_0_16\Hook\AbstractHook;
+use WS\JTL5\V2_0_5\Hook\AbstractHook;
 
 class FrontendHook extends AbstractHook
 {
@@ -34,10 +34,18 @@ class FrontendHook extends AbstractHook
                 unset($_SESSION[$key]);
             }
 
-            // append queue script
+            // append queue script each X request according to plugin setting "asyncModulo"
             if (PluginHelper::getSetting('queue') === 'async') {
-                Shop::Smarty()->assign('wsQueueURL', Shop::getURL() . '/ws5_mollie/queue');
-                pq('body')->append(Shop::Smarty()->fetch(PluginHelper::getPlugin()->getPaths()->getFrontendPath() . 'template/queue.tpl', false));
+                $modulo = 1;
+                $settingValue = intval(PluginHelper::getSetting('asyncModulo'));
+                if ($settingValue && $settingValue > 1) {
+                    $modulo = $settingValue;
+                }
+                $random = rand(1, $modulo);
+                if ($random === 1) {
+                    Shop::Smarty()->assign('wsQueueURL', Shop::getURL() . '/ws5_mollie/queue');
+                    pq('body')->append(Shop::Smarty()->fetch(PluginHelper::getPlugin()->getPaths()->getFrontendPath() . 'template/queue.tpl', false));
+                }
             }
         } catch (Exception $e) {
         }

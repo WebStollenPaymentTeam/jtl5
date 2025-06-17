@@ -12,7 +12,7 @@ use JTL\Language\LanguageHelper;
 use JTL\Session\Frontend;
 use Plugin\ws5_mollie\lib\Model\CustomerModel;
 use Plugin\ws5_mollie\lib\PluginHelper;
-use WS\JTL5\V1_0_16\Hook\AbstractHook;
+use WS\JTL5\V2_0_5\Hook\AbstractHook;
 
 class Checkbox extends AbstractHook
 {

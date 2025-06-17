@@ -13,6 +13,7 @@ use Plugin\ws5_mollie\lib\Checkout\AbstractCheckout;
 use Plugin\ws5_mollie\lib\Locale;
 use Plugin\ws5_mollie\lib\PaymentMethod;
 use Plugin\ws5_mollie\lib\PluginHelper;
+use stdClass;
 
 class Banktransfer extends PaymentMethod
 {
@@ -56,7 +57,7 @@ class Banktransfer extends PaymentMethod
     {
         $paymentOptions = [];
         if ($apiType === 'payment') {
-            $paymentOptions['billingEmail'] = $order->oRechnungsadresse->cMail;
+            // Set Method-specific parameters
             $paymentOptions['locale'] = Locale::getLocale(Frontend::get('cISOSprache', 'ger'), $order->oRechnungsadresse->cLand);
             // TODO: Refactor this to use "PluginHelper::getPaymentSetting" once available
             $dueDays = (int)self::Plugin('ws5_mollie')->getConfig()->getValue($this->moduleID . '_dueDays');

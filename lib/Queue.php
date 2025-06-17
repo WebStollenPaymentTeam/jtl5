@@ -16,10 +16,11 @@ use JTL\Helpers\Request;
 use Mollie\Api\Types\OrderStatus;
 use Plugin\ws5_mollie\lib\Checkout\AbstractCheckout;
 use Plugin\ws5_mollie\lib\Checkout\OrderCheckout;
+use Plugin\ws5_mollie\lib\Checkout\PaymentCheckout;
 use Plugin\ws5_mollie\lib\Model\QueueModel;
 use RuntimeException;
-use WS\JTL5\V1_0_16\Helper\AbstractPluginHelper;
-use WS\JTL5\V1_0_16\Traits\Plugins;
+use WS\JTL5\V2_0_5\Helper\AbstractPluginHelper;
+use WS\JTL5\V2_0_5\Traits\Plugins;
 
 class Queue
 {
@@ -193,7 +194,7 @@ class Queue
         if ($checkout->getBestellung()->kBestellung && $checkout->getPaymentMethod()) {
             $checkout->handleNotification();
             
-            return $todo->done('Status: ' . $checkout->getMollie()->status);
+            return $todo->done('Webhook Aufruf | Status: ' . $checkout->getMollie()->status);
         }
 
         throw new RuntimeException("Bestellung oder Zahlungsart konnte nicht geladen werden: $id");
@@ -235,44 +236,66 @@ class Queue
                             (int)$data['status']
                             && array_key_exists('status', $data)
                             && $checkout->getPaymentMethod()
-                            && (strpos($checkout->getModel()->cOrderId, 'tr_') === false)
                             && $checkout->getMollie()
                         ) {
-                            /** @var OrderCheckout $checkout */
-                            $checkout->handleNotification();
-                            if ($checkout->getMollie()->status === OrderStatus::STATUS_COMPLETED) {
-                                $result = 'Mollie Status already ' . $checkout->getMollie()->status;
-                            } elseif (
-                                $checkout->getMollie()->isCreated()
-                                || $checkout->getMollie()->isPaid()
-                                || $checkout->getMollie()->isAuthorized()
-                                || $checkout->getMollie()->isShipping()
-                                || $checkout->getMollie()->isPending()
-                            ) {
-                                try {
-                                    if ($shipments = Shipment::syncBestellung($checkout)) {
-                                        foreach ($shipments as $shipment) {
-                                            if (is_string($shipment)) {
-                                                $checkout->Log("Shipping-Error: $shipment");
-                                                $result .= "Shipping-Error: $shipment\n";
-                                            } else {
-                                                $checkout->Log("Order shipped: $shipment->id");
-                                                $result .= "Order shipped: $shipment->id\n";
+                            // Handle Shipments for Orders that were created via OrderAPI - as long as it is not finally removed from Plugin
+                            // TODO remove Shipments and OrderAPI when it is cancelled by mollie itself
+                            if (!str_contains($checkout->getModel()->cOrderId, 'tr_')) {
+                                /** @var OrderCheckout $checkout */
+                                $checkout->handleNotification();
+                                if ($checkout->getMollie()->status === OrderStatus::STATUS_COMPLETED) {
+                                    $result = 'Mollie Status already ' . $checkout->getMollie()->status;
+                                } elseif (
+                                    $checkout->getMollie()->isCreated()
+                                    || $checkout->getMollie()->isPaid()
+                                    || $checkout->getMollie()->isAuthorized()
+                                    || $checkout->getMollie()->isShipping()
+                                    || $checkout->getMollie()->isPending()
+                                ) {
+                                    try {
+                                        if ($shipments = Shipment::syncBestellung($checkout)) {
+                                            foreach ($shipments as $shipment) {
+                                                if (is_string($shipment)) {
+                                                    $checkout->Log("Shipping-Error: $shipment");
+                                                    $result .= "Shipping-Error: $shipment\n";
+                                                } else {
+                                                    $checkout->Log("Order shipped: $shipment->id");
+                                                    $result .= "Order shipped: $shipment->id\n";
+                                                }
                                             }
+                                        } else {
+                                            $result = 'No Shipments ready!';
                                         }
-                                    } else {
-                                        $result = 'No Shipments ready!';
+                                    } catch (Exception $e) {
+                                        $result = $e->getMessage() . "\n" . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString();
                                     }
-                                } catch (Exception $e) {
-                                    $result = $e->getMessage() . "\n" . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString();
+                                } else {
+                                    $result = 'Unexpected Mollie Status: ' . $checkout->getMollie()->status;
                                 }
-                            } else {
-                                $result = 'Unexpected Mollie Status: ' . $checkout->getMollie()->status;
+                            }
+
+                            // Handle Captures for Klarna, Riverty and Billie Payments that were created via PaymentAPI
+                            if (str_contains($checkout->getModel()->cOrderId, 'tr_') && $checkout->getMollie()->captureMode === 'manual') {
+                                /** @var PaymentCheckout $checkout */
+                                $checkout->handleNotification();
+                                if (
+                                    $checkout->getMollie()->isPaid()
+                                    || $checkout->getMollie()->isAuthorized()
+                                    || $checkout->getMollie()->isPending()
+                                ) {
+                                    try {
+                                        // Capture Payment
+                                        $result = $checkout->capturePayment();
+                                    } catch (Exception $e) {
+                                        $result = $e->getMessage() . "\n" . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString();
+                                    }
+                                } else {
+                                    $result = 'Unexpected Mollie Status: ' . $checkout->getMollie()->status;
+                                }
                             }
                         } else {
                             $result = 'Nothing to do.';
                         }
-
                         return $queueModel->done($result);
                     }
 
@@ -336,14 +359,16 @@ class Queue
                         if (!in_array($checkout->getMollie()->status, [OrderStatus::STATUS_PAID, OrderStatus::STATUS_COMPLETED, OrderStatus::STATUS_AUTHORIZED], true)) {
                             $checkout->storno();
                         } else {
-                            $checkout->Log(sprintf('AutoStorno: Bestellung bezahlt? %s - Method: %s', $checkout->getMollie()->status, $checkout->getMollie()->method), LOGLEVEL_ERROR);
+                            // Auskommentiert - Kein Mehrwert, müllt nur den Log voll
+                            // $checkout->Log(sprintf('AutoStorno: Bestellung bezahlt? %s - Method: %s', $checkout->getMollie()->status, $checkout->getMollie()->method), LOGLEVEL_ERROR);
                         }
-                    }
-                     else {
-                         $checkout->Log(sprintf('AutoStorno aktiv: %d (%s) - Method: %s', (int)$pm::ALLOW_AUTO_STORNO, $pm::METHOD, $checkout->getMollie()->method), LOGLEVEL_ERROR);
+                    } else {
+                        // Auskommentiert - Kein Mehrwert, müllt nur den Log voll
+                        // $checkout->Log(sprintf('AutoStorno aktiv: %d (%s) - Method: %s', (int)$pm::ALLOW_AUTO_STORNO, $pm::METHOD, $checkout->getMollie()->method), LOGLEVEL_ERROR);
                      }
                 } else {
-                    //$checkout->Log('AutoStorno: bereits zur WAWI synchronisiert.', LOGLEVEL_ERROR);
+                    // Auskommentiert - Kein Mehrwert, müllt nur den Log voll
+                    // $checkout->Log('AutoStorno: bereits zur WAWI synchronisiert.', LOGLEVEL_ERROR);
                 }
             } catch (Exception $e) {
                 Shop::Container()->getLogService()->error(sprintf('Fehler beim stornieren der Order: %s / Bestellung: %s: %s', $o->cBestellNr, $o->kId, $e->getMessage()));
@@ -353,3 +378,4 @@ class Queue
         return true;
     }
 }
+

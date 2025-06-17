@@ -15,7 +15,7 @@ use JTL\Shop;
 use Mollie\Api\Exceptions\ApiException;
 use Mollie\Api\Exceptions\IncompatiblePlatform;
 use Mollie\Api\MollieApiClient;
-use WS\JTL5\V1_0_16\Traits\Plugins;
+use WS\JTL5\V2_0_5\Traits\Plugins;
 
 class MollieAPI
 {

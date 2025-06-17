@@ -2,7 +2,7 @@
 
 namespace Plugin\ws5_mollie\lib;
 
-use WS\JTL5\V1_0_16\Helper\AbstractPluginHelper;
+use WS\JTL5\V2_0_5\Helper\AbstractPluginHelper;
 
 /**
  * Provides functionality like get and set settings.

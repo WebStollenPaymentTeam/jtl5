@@ -11,7 +11,7 @@ use JTL\Session\Frontend;
 use Mollie\Api\Exceptions\ApiException;
 use Plugin\ws5_mollie\lib\Model\CustomerModel;
 use stdClass;
-use WS\JTL5\V1_0_16\Traits\Jsonable;
+use WS\JTL5\V2_0_5\Traits\Jsonable;
 
 /**
  * Class Customer
@@ -44,6 +44,7 @@ class Customer
     /**
      * @param \JTL\Customer\Customer $oKunde
      * @return null|string
+     * @throws ApiException
      */
     public static function createOrUpdate(\JTL\Customer\Customer $oKunde): ?string
     {

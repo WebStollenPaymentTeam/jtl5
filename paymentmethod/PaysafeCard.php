@@ -19,7 +19,11 @@ class PaysafeCard extends PaymentMethod
 
     public function getPaymentOptions(Bestellung $order, $apiType): array
     {
-       // return $apiType === 'payment' ? ['customerReference' => $order->oKunde->getID()] : [];
-        return $apiType === 'payment' ? ['customerReference' => Frontend::getCustomer()->getID()] : [];
+        if ( $apiType === 'payment' && Frontend::getCustomer()->getID() > 0) {
+            // Set Method-specific parameters
+            return  ['customerReference' => strval(Frontend::getCustomer()->getID())];
+        } else {
+            return [];
+        }
     }
 }

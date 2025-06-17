@@ -11,6 +11,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Exception;
 use JTL\Alert\Alert;
+use JTL\CheckBox;
 use JTL\Checkout\Bestellung;
 use JTL\Exceptions\CircularReferenceException;
 use JTL\Exceptions\ServiceNotFoundException;
@@ -22,7 +23,7 @@ use Mollie\Api\Exceptions\ApiException;
 use Mollie\Api\Exceptions\IncompatiblePlatform;
 use Plugin\ws5_mollie\lib\Checkout\OrderCheckout;
 use Plugin\ws5_mollie\lib\Checkout\PaymentCheckout;
-use WS\JTL5\V1_0_16\Traits\Plugins;
+use WS\JTL5\V2_0_5\Traits\Plugins;
 
 abstract class PaymentMethod extends Method
 {
@@ -112,7 +113,7 @@ abstract class PaymentMethod extends Method
      * @param null|string $country
      * @return string
      */
-    public static function getLocale(string $cISOSprache, string $country = null): string
+    public static function getLocale(string $cISOSprache, ?string $country = null): string
     {
         switch ($cISOSprache) {
             case 'ger':
@@ -234,19 +235,20 @@ abstract class PaymentMethod extends Method
                 $paymentOptions['customerId'] = $customerID;
             }
 
-            // TODO: Refactor this to use "PluginHelper::getPaymentSetting" once available
-            $api = self::Plugin('ws5_mollie')->getConfig()->getValue($this->moduleID . '_api');
-
+            // API is now always payment api for new orders
+            $api = 'payment';
             $paymentOptions = array_merge($paymentOptions, $this->getPaymentOptions($order, $api));
 
-            if ($api === 'payment') {
-                $checkout = PaymentCheckout::factory($order);
-                $payment = $checkout->create($paymentOptions);
-                $url = $payment->getCheckoutUrl();
-            } else {
-                $checkout = OrderCheckout::factory($order);
-                $mOrder = $checkout->create($paymentOptions);
-                $url = $mOrder->getCheckoutUrl();
+            $checkout = PaymentCheckout::factory($order);
+            $payment = $checkout->create($paymentOptions);
+            $url = $payment->getCheckoutUrl();
+
+            if ($this->duringCheckout) {
+                // Handle Checkboxes bei Bezahlung vor Bestellabschluss, da diese durch POST parameter getriggert werden, die beim Redirect verloren gehen
+                self::handleCheckboxes($order);
+            } else if (\JTL\Shopsetting::getInstance()->getValue(CONF_KAUFABWICKLUNG, 'bestellabschluss_abschlussseite') === 'S') {
+                // Cleanup Session bei Bezahlung nach Bestellabschluss, wenn Abschlussseite = Statusseite
+                Frontend::getInstance()->cleanUp();
             }
 
             try {
@@ -257,6 +259,7 @@ abstract class PaymentMethod extends Method
             } catch (\Exception $e) {
                 $this->doLog('mollie::preparePaymentProcess: PUI - ' . $e->getMessage() . ' - ' . print_r(['cBestellNr' => $order->cBestellNr], 1), LOGLEVEL_NOTICE);
             }
+
 
             if ($url) {
                 ifndef('MOLLIE_REDIRECT_DELAY', 3);
@@ -307,5 +310,23 @@ abstract class PaymentMethod extends Method
             $this->doLog("ERROR: mollie::handleNotification: Bestellung '$order->cBestellNr': {$e->getMessage()}", LOGLEVEL_ERROR);
             Shop::Container()->getBackendLogService()->critical($e->getMessage(), $_REQUEST);
         }
+    }
+
+    private static function handleCheckboxes(Bestellung $order): void
+    {
+        /**
+         * @var \JTL\Customer\Customer $customer
+         */
+        $customer = $_SESSION['Kunde'];
+        $customerGroupID   = $customer->getGroupID();
+        $checkbox          = new CheckBox(0, PluginHelper::getDB());
+        $checkbox->triggerSpecialFunction(
+            \CHECKBOX_ORT_BESTELLABSCHLUSS,
+            $customerGroupID,
+            true,
+            $_POST,
+            ['oBestellung' => $order, 'oKunde' => $customer]
+        );
+
     }
 }

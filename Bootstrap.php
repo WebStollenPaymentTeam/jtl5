@@ -7,10 +7,15 @@
 
 namespace Plugin\ws5_mollie;
 
+use JTL\Checkout\Bestellung;
 use JTL\Events\Dispatcher;
 use JTL\Exceptions\CircularReferenceException;
 use JTL\Exceptions\ServiceNotFoundException;
+use JTL\Filter\Metadata;
 use JTL\Router\Router;
+use JTL\Shop;
+use JTL\Smarty\JTLSmarty;
+use Plugin\ws5_mollie\lib\Checkout\AbstractCheckout;
 use Plugin\ws5_mollie\lib\CleanupCronJob;
 use Plugin\ws5_mollie\lib\Hook\ApplePay;
 use Plugin\ws5_mollie\lib\Hook\Checkbox;
@@ -19,10 +24,11 @@ use Plugin\ws5_mollie\lib\Hook\Queue;
 use Plugin\ws5_mollie\lib\Hook\FrontendHook;
 use Plugin\ws5_mollie\lib\PluginHelper;
 use JTL\Events\Event;
+use Psr\Http\Message\ServerRequestInterface;
 
 require_once __DIR__ . '/vendor/autoload.php';
 
-class Bootstrap extends \WS\JTL5\V1_0_16\Bootstrap
+class Bootstrap extends \WS\JTL5\V2_0_5\Bootstrap
 {
     private const CRON_TYPE = 'cronjob_mollie_cleanup';
 
@@ -50,6 +56,33 @@ class Bootstrap extends \WS\JTL5\V1_0_16\Bootstrap
 
         $this->listen(HOOK_BESTELLABSCHLUSS_INC_BESTELLUNGINDB, [Queue::class, 'bestellungInDB']);
 
+        // Logging
+        $this->listen(HOOK_BESTELLABSCHLUSS_INC_BESTELLUNGINDB_ENDE, function($args_arr) {
+            if (
+                PluginHelper::getSetting('debugMode')
+                && array_key_exists('oBestellung', $args_arr)
+                && AbstractCheckout::isMollie((int)$args_arr['oBestellung']->kZahlungsart, true)
+            ) {
+                /**
+                 * @var Bestellung  $oBestellung
+                 */
+                $oBestellung = $args_arr['oBestellung'];
+                $paymentSession = Shop::Container()->getDB()->executeQueryPrepared('SELECT * FROM tzahlungsession WHERE kBestellung = 0 AND nBezahlt = 0 AND cSID = :id ',
+                    [
+                        ':id' => $oBestellung->cSession ?? ''
+                    ], 1);
+                $order = (object)[
+                    'kBestellung' => $oBestellung->kBestellung ?? '',
+                    'cBestellNr' =>$oBestellung->cBestellNr ?? '',
+                    'kZahlungsart' => $oBestellung->kZahlungsart  ?? '',
+                    'cZahlungsartName' => $oBestellung->cZahlungsartName  ?? '',
+                    'cZahlungsID' => $paymentSession->cZahlungsID  ? $paymentSession : ''
+                ];
+
+                PluginHelper::getLogger()->debugWithStacktrace("Mollie: Bestellung wurde in DB gespeichert | " . json_encode($order, JSON_PRETTY_PRINT));
+            }
+        });
+
         $this->listen(HOOK_INDEX_NAVI_HEAD_POSTGET, [Queue::class, 'headPostGet']);
 
         $this->listen(HOOK_BESTELLUNGEN_XML_BESTELLSTATUS, [Queue::class, 'xmlBestellStatus']);
@@ -60,7 +93,47 @@ class Bootstrap extends \WS\JTL5\V1_0_16\Bootstrap
             $this->listen(HOOK_CHECKBOX_CLASS_GETCHECKBOXFRONTEND, [Checkbox::class, 'execute']);
         }
 
-        //routes
+        // Add routes for processPaymentPage and checkPaymentStatus()-Webhook
+        $this->listen(HOOK_ROUTER_PRE_DISPATCH, function ($args) {
+            /** @var Router $router */
+            $router = $args['router'];
+            // This Route is called, when customer got redirected from mollie but webhook was not called before and order is no finalized yet
+            $router->addRoute('/' . self::getPlugin()->getPluginID() . '/processPayment', function (ServerRequestInterface $request, array $args, JTLSmarty $smarty) {
+                // Safety first in bootstrap
+                ifndef('LINNKTYPE_BESTELLABSCHLUSS', 33);
+                ifndef('LINKTYP_BESTELLSTATUS', 38);
+                $linktype_ordercompleted = (int) LINKTYP_BESTELLABSCHLUSS;
+                $linktype_orderstatus = (int) LINKTYP_BESTELLSTATUS;
+
+                // Get correct redirect url from shop settings: Bestellstatus/Bestellabschluss
+                if (\JTL\Shopsetting::getInstance()->getValue(CONF_KAUFABWICKLUNG, 'bestellabschluss_abschlussseite') === 'A') {
+                    $redirectURL = Shop::Container()->getLinkService()->getSpecialPage($linktype_ordercompleted)->getURL();
+                } else {
+                    $redirectURL = Shop::Container()->getLinkService()->getSpecialPage($linktype_orderstatus)->getURL();
+                }
+                // Get meta data for processPaymentPage
+                $maxLength       = (int)Shop::getSettingValue(\CONF_METAANGABEN, 'global_meta_maxlaenge_title');
+                $globalMetaData  = Metadata::getGlobalMetaData()[Shop::getLanguageID()] ?? null;
+                $metaTitle       = Metadata::prepareMeta($globalMetaData->Title ?? '', null, $maxLength);
+                $errorUrl        = Shop::Container()->getLinkService()->getSpecialPage(LINKTYP_BESTELLVORGANG)->getURL();
+                // Assign necessary data and load template
+                return $smarty->assign('shopURL', Shop::getURL())
+                    ->assign('paymentProcessPendingHeading', PluginHelper::getSprachvariableByName('paymentProcessPendingHeading'))
+                    ->assign('paymentProcessPendingText', PluginHelper::getSprachvariableByName('paymentProcessPendingText'))
+                    ->assign('paymentProcessFinishedText', PluginHelper::getSprachvariableByName('paymentProcessFinishedText'))
+                    ->assign('errorURL', $errorUrl)
+                    ->assign('redirectURL', $redirectURL)
+                    ->assign('templateDir', $smarty->getTemplateUrlPath())
+                    ->assign('meta_title', $metaTitle)
+                    ->getResponse(__DIR__ . '/frontend/template/processPayment.tpl');
+            });
+
+            // This Route is called from processPaymentPage to check payment status while customer is waiting
+            $router->addRoute('/' . self::getPlugin()->getPluginID() . '/checkPaymentStatus',  [Queue::class, 'checkPaymentStatus']);
+        });
+
+
+        // Add route for async queue
         if (PluginHelper::getSetting('queue') === 'async') {
             $this->listen(HOOK_ROUTER_PRE_DISPATCH, function ($args) {
                 /** @var Router $router */

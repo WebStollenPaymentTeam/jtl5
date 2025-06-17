@@ -7,6 +7,7 @@
 
 namespace Plugin\ws5_mollie\lib\Controller;
 
+use Exception;
 use JTL\DB\ReturnType;
 use JTL\Plugin\Helper;
 use JTL\Plugin\Payment\LegacyMethod;
@@ -19,9 +20,10 @@ use Plugin\ws5_mollie\lib\Checkout\OrderCheckout;
 use Plugin\ws5_mollie\lib\Checkout\PaymentCheckout;
 use Plugin\ws5_mollie\lib\MollieAPI;
 use Plugin\ws5_mollie\lib\PluginHelper;
+use RuntimeException;
 use stdClass;
-use WS\JTL5\V1_0_16\Backend\AbstractResult;
-use WS\JTL5\V1_0_16\Backend\Controller\AbstractController;
+use WS\JTL5\V2_0_5\Backend\AbstractResult;
+use WS\JTL5\V2_0_5\Backend\Controller\AbstractController;
 
 class MollieController extends AbstractController
 {
@@ -33,6 +35,10 @@ class MollieController extends AbstractController
      */
     public static function methods(stdClass $data): AbstractResult
     {
+        if (PluginHelper::getSetting('apiKey') === '' && PluginHelper::getSetting('test_apiKey') === '') {
+            return new AbstractResult([]);
+        }
+
         $test = false;
         if (PluginHelper::getSetting('apiKey') === '' && PluginHelper::getSetting('test_apiKey') !== '') {
             $test = true;
@@ -40,14 +46,14 @@ class MollieController extends AbstractController
         $api = new MollieAPI($test);
 
         $_methods = $api->getClient()->methods->allAvailable([/*'includeWallets' => 'applepay', 'resource' => 'orders'*/]);
-        $methods  = [];
-        $oPlugin  = self::Plugin('ws5_mollie');
+        $methods = [];
+        $oPlugin = self::Plugin('ws5_mollie');
 
         foreach ($_methods as $method) {
             if (in_array($method->id, ['voucher', PaymentMethod::DIRECTDEBIT, PaymentMethod::GIFTCARD], true)) {
                 continue;
             }
-            $id           = 'kPlugin_' . Helper::getIDByPluginID('ws5_mollie') . '_' . $method->id;
+            $id = 'kPlugin_' . Helper::getIDByPluginID('ws5_mollie') . '_' . $method->id;
             $oZahlungsart = PluginHelper::getDB()->executeQueryPrepared('SELECT * FROM tzahlungsart WHERE cModulId = :cModulID;', [
                 ':cModulID' => $id
             ], 1);
@@ -72,9 +78,6 @@ JOIN tzahlungsart z ON vz.kZahlungsart = z.kZahlungsart
 WHERE z.cModulId = :cModulID', [':cModulID' => $id], 2),
             ];
 
-            if ($api = $oPlugin->getConfig()->getValue($id . '_api')) {
-                $methods[$method->id]->api = $api;
-            }
             if ($api = $oPlugin->getConfig()->getValue($id . '_components')) {
                 $methods[$method->id]->components = $api;
             }
@@ -143,27 +146,27 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
 
     /**
      * @param stdClass $data
-     * @throws \Exception
-     * @throws ApiException
      * @return AbstractResult
+     * @throws ApiException
+     * @throws Exception
      */
     public static function cancelOrderLine(stdClass $data): AbstractResult
     {
         if (strpos($data->id, 'ord_') !== 0) {
-            throw new \RuntimeException('Invalid Order ID!');
+            throw new RuntimeException('Invalid Order ID!');
         }
         if (strpos($data->lineId, 'odl_') !== 0) {
-            throw new \RuntimeException('Invalid Orderline ID!');
+            throw new RuntimeException('Invalid Orderline ID!');
         }
         if (!$data->quantity || $data->quantity <= 0) {
-            throw new \RuntimeException('Invalid Quantity!');
+            throw new RuntimeException('Invalid Quantity!');
         }
 
         $checkout = OrderCheckout::fromID($data->id);
         $checkout->getMollie()->cancelLines([
             'lines' => [
                 [
-                    'id'       => $data->lineId,
+                    'id' => $data->lineId,
                     'quantity' => $data->quantity,
                 ],
             ],
@@ -172,10 +175,14 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
         return new AbstractResult(true);
     }
 
+    /**
+     * @throws ApiException
+     * @throws Exception
+     */
     public static function cancelOrder(stdClass $data): AbstractResult
     {
         if (strpos($data->id, 'ord_') !== 0) {
-            throw new \RuntimeException('Invalid Order ID!');
+            throw new RuntimeException('Invalid Order ID!');
         }
 
         $checkout = OrderCheckout::fromID($data->id);
@@ -185,7 +192,7 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
 
     /**
      * @throws ApiException
-     * @throws \Exception
+     * @throws Exception
      */
     public static function refundOrder(stdClass $data): AbstractResult
     {
@@ -202,10 +209,14 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
         return new AbstractResult(true);
     }
 
+    /**
+     * @throws ApiException
+     * @throws Exception
+     */
     public static function cancelRefund(stdClass $data): AbstractResult
     {
         if (!$data->id || !$data->refundId) {
-            throw new \RuntimeException('Missing Mollie ID or Refund ID!');
+            throw new RuntimeException('Missing Mollie ID or Refund ID!');
         }
 
         if (strpos($data->id, 'tr_') !== false) {
@@ -223,26 +234,30 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
             }
         }
 
-        throw new \RuntimeException('Refund not found!');
+        throw new RuntimeException('Refund not found!');
     }
 
+    /**
+     * @throws ApiException
+     * @throws Exception
+     */
     public static function refundOrderLine(stdClass $data): AbstractResult
     {
         if (strpos($data->id, 'ord_') !== 0) {
-            throw new \RuntimeException('Invalid Order ID!');
+            throw new RuntimeException('Invalid Order ID!');
         }
         if (strpos($data->lineId, 'odl_') !== 0) {
-            throw new \RuntimeException('Invalid Order ID!');
+            throw new RuntimeException('Invalid Order ID!');
         }
         if (!$data->quantity || $data->quantity <= 0) {
-            throw new \RuntimeException('Invalid Quantity!');
+            throw new RuntimeException('Invalid Quantity!');
         }
 
         $checkout = OrderCheckout::fromID($data->id);
         $checkout->getMollie()->refund([
             'lines' => [
                 [
-                    'id'       => $data->lineId,
+                    'id' => $data->lineId,
                     'quantity' => $data->quantity,
                 ],
             ],
@@ -252,20 +267,24 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
     }
 
 
+    /**
+     * @throws ApiException
+     * @throws Exception
+     */
     public static function refundAmount(stdClass $data): AbstractResult
     {
         if (strpos($data->id, 'tr_') !== 0) {
-            throw new \RuntimeException('Invalid Payment ID!');
+            throw new RuntimeException('Invalid Payment ID!');
         }
 
         if (!$data->amount) {
-            throw new \RuntimeException('Invalid Amount!');
+            throw new RuntimeException('Invalid Amount!');
         }
 
         $checkout = PaymentCheckout::fromID($data->id);
-        $result   = $checkout->getMollie()->refund([
+        $result = $checkout->getMollie()->refund([
             'amount' => [
-                'value'    => number_format((float)$data->amount, 2),
+                'value' => number_format((float)$data->amount, 2),
                 'currency' => $checkout->getMollie()->amount->currency,
             ],
             'description' => 'Refund for order ' . $checkout->getBestellung()->cBestellNr,
@@ -274,20 +293,25 @@ AND b.dErstellt > DATE_SUB(CURDATE(), INTERVAL 1 YEAR)
         return new AbstractResult($result->id);
     }
 
+    /**
+     * @throws Exception
+     */
     public static function getOrder(stdClass $data)
     {
         if (strpos($data->id, 'ord_') !== 0) {
-            throw new \RuntimeException('Invalid Order ID!');
+            throw new RuntimeException('Invalid Order ID!');
         }
         $checkout = OrderCheckout::fromID($data->id);
-
         return new AbstractResult($checkout->getMollie());
     }
 
+    /**
+     * @throws Exception
+     */
     public static function getPayment(stdClass $data)
     {
         if (strpos($data->id, 'tr_') !== 0) {
-            throw new \RuntimeException('Invalid Payment ID!');
+            throw new RuntimeException('Invalid Payment ID!');
         }
         $checkout = PaymentCheckout::fromID($data->id);
 
