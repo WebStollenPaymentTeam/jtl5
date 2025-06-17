@@ -9,7 +9,7 @@ namespace Plugin\ws5_mollie\lib\Hook;
 
 use Exception;
 use Plugin\ws5_mollie\lib\PluginHelper;
-use WS\JTL5\V1_0_16\Hook\AbstractHook;
+use WS\JTL5\V2_0_5\Hook\AbstractHook;
 
 class ApplePay extends AbstractHook
 {

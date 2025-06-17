@@ -17,7 +17,7 @@ use Mollie\Api\Types\OrderLineType;
 use Plugin\ws5_mollie\lib\Order\Amount;
 use RuntimeException;
 use stdClass;
-use WS\JTL5\V1_0_16\Traits\Jsonable;
+use WS\JTL5\V2_0_5\Traits\Jsonable;
 
 class OrderLine implements JsonSerializable
 {
@@ -98,6 +98,10 @@ class OrderLine implements JsonSerializable
         $orderLine->vatRate     = number_format($_vatRate * 100, 2);
         $orderLine->vatAmount   = new Amount($vatAmount, $currency, false);
 
+        if (isset($oPosition->Artikel)) {
+            $orderLine->sku       = $oPosition->Artikel->cArtNr;
+        }
+
         return $orderLine;
     }
 
@@ -127,10 +131,7 @@ class OrderLine implements JsonSerializable
                 return OrderLineType::TYPE_DISCOUNT;
             default:
                 return $positive ? OrderLineType::TYPE_SURCHARGE : OrderLineType::TYPE_DISCOUNT;
-
         }
-
-        throw new Exception('Unknown PosTyp.', (int)$nPosTyp);
     }
 
     /**

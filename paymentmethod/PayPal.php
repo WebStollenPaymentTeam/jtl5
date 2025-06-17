@@ -24,12 +24,7 @@ class PayPal extends PaymentMethod
         $paymentOptions = [];
 
         if ($apiType === 'payment') {
-            if ($order->Lieferadresse !== null) {
-                if (!$order->Lieferadresse->cMail) {
-                    $order->Lieferadresse->cMail = $order->oRechnungsadresse->cMail;
-                }
-                $paymentOptions['shippingAddress'] = new Address($order->Lieferadresse);
-            }
+            // Sets description of paypal payments and overwrites the value that is specified in plugin settings as description for all payments - for "Bezahlung vor Bestellschluss" this contains just the preliminary order number and it is overwritten by updateOrderNumber() later again
             $paymentOptions['description'] = 'Order ' . $order->cBestellNr;
         }
 

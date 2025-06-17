@@ -7,6 +7,7 @@
 
 namespace Plugin\ws5_mollie;
 
+use JTL\Checkout\Bestellung;
 use JTL\Events\Dispatcher;
 use JTL\Exceptions\CircularReferenceException;
 use JTL\Exceptions\ServiceNotFoundException;
@@ -14,6 +15,7 @@ use JTL\Filter\Metadata;
 use JTL\Router\Router;
 use JTL\Shop;
 use JTL\Smarty\JTLSmarty;
+use Plugin\ws5_mollie\lib\Checkout\AbstractCheckout;
 use Plugin\ws5_mollie\lib\CleanupCronJob;
 use Plugin\ws5_mollie\lib\Hook\ApplePay;
 use Plugin\ws5_mollie\lib\Hook\Checkbox;
@@ -26,7 +28,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 require_once __DIR__ . '/vendor/autoload.php';
 
-class Bootstrap extends \WS\JTL5\V1_0_16\Bootstrap
+class Bootstrap extends \WS\JTL5\V2_0_5\Bootstrap
 {
     private const CRON_TYPE = 'cronjob_mollie_cleanup';
 
@@ -53,6 +55,33 @@ class Bootstrap extends \WS\JTL5\V1_0_16\Bootstrap
         $this->listen(HOOK_BESTELLVORGANG_PAGE, [IncompletePaymentHandler::class, 'checkForIncompletePayment']);
 
         $this->listen(HOOK_BESTELLABSCHLUSS_INC_BESTELLUNGINDB, [Queue::class, 'bestellungInDB']);
+
+        // Logging
+        $this->listen(HOOK_BESTELLABSCHLUSS_INC_BESTELLUNGINDB_ENDE, function($args_arr) {
+            if (
+                PluginHelper::getSetting('debugMode')
+                && array_key_exists('oBestellung', $args_arr)
+                && AbstractCheckout::isMollie((int)$args_arr['oBestellung']->kZahlungsart, true)
+            ) {
+                /**
+                 * @var Bestellung  $oBestellung
+                 */
+                $oBestellung = $args_arr['oBestellung'];
+                $paymentSession = Shop::Container()->getDB()->executeQueryPrepared('SELECT * FROM tzahlungsession WHERE kBestellung = 0 AND nBezahlt = 0 AND cSID = :id ',
+                    [
+                        ':id' => $oBestellung->cSession ?? ''
+                    ], 1);
+                $order = (object)[
+                    'kBestellung' => $oBestellung->kBestellung ?? '',
+                    'cBestellNr' =>$oBestellung->cBestellNr ?? '',
+                    'kZahlungsart' => $oBestellung->kZahlungsart  ?? '',
+                    'cZahlungsartName' => $oBestellung->cZahlungsartName  ?? '',
+                    'cZahlungsID' => $paymentSession->cZahlungsID  ? $paymentSession : ''
+                ];
+
+                PluginHelper::getLogger()->debugWithStacktrace("Mollie: Bestellung wurde in DB gespeichert | " . json_encode($order, JSON_PRETTY_PRINT));
+            }
+        });
 
         $this->listen(HOOK_INDEX_NAVI_HEAD_POSTGET, [Queue::class, 'headPostGet']);
 

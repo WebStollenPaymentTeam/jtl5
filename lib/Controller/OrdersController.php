@@ -18,8 +18,8 @@ use Plugin\ws5_mollie\lib\Model\OrderModel;
 use Plugin\ws5_mollie\lib\Model\ShipmentsModel;
 use Plugin\ws5_mollie\lib\PluginHelper;
 use stdClass;
-use WS\JTL5\V1_0_16\Backend\AbstractResult;
-use WS\JTL5\V1_0_16\Backend\Controller\AbstractController;
+use WS\JTL5\V2_0_5\Backend\AbstractResult;
+use WS\JTL5\V2_0_5\Backend\Controller\AbstractController;
 
 /**
  * Class OrdersController
@@ -38,6 +38,17 @@ class OrdersController extends AbstractController
         $oBestellung = new Bestellung($orderModel->kBestellung);
 
         return new AbstractResult(AbstractCheckout::makeFetchable($oBestellung, $orderModel));
+    }
+
+    public static function fetchMollieOrders(): AbstractResult
+    {
+        if (PluginHelper::getSetting('hideCompleted')) {
+            $sqlQuery = "SELECT o.*, b.cStatus as cJTLStatus, b.cAbgeholt, b.cVersandartName, b.cZahlungsartName, b.fGuthaben, b.fGesamtsumme FROM xplugin_ws5_mollie_orders o JOIN tbestellung b ON b.kbestellung = o.kBestellung WHERE !(o.cStatus IN ('paid', 'completed') AND b.cStatus = '4') ORDER BY b.dErstellt DESC;";
+        } else {
+            $sqlQuery = "SELECT o.*, b.cStatus AS cJTLStatus, b.cAbgeholt, b.cVersandartName, b.cZahlungsartName, b.fGuthaben, b.fGesamtsumme FROM xplugin_ws5_mollie_orders o JOIN tbestellung b ON b.kbestellung = o.kBestellung ORDER BY b.dErstellt DESC;";
+        }
+        $results = PluginHelper::getDB()->executeQuery($sqlQuery, 2);
+        return new AbstractResult($results);
     }
 
     /**
@@ -68,60 +79,11 @@ class OrdersController extends AbstractController
         return new AbstractResult($response);
     }
 
+
     /**
      * @param stdClass $data
      * @return AbstractResult
-     */
-    public static function all(stdClass $data): AbstractResult
-    {
-        if (PluginHelper::getSetting('hideCompleted')) {
-            $query = 'SELECT o.*, b.cStatus as cJTLStatus, b.cAbgeholt, b.cVersandartName, b.cZahlungsartName, b.fGuthaben, b.fGesamtsumme '
-                . 'FROM xplugin_ws5_mollie_orders o '
-                . 'JOIN tbestellung b ON b.kbestellung = o.kBestellung '
-                . "WHERE !(o.cStatus = 'completed' AND b.cStatus = '4')"
-                . 'ORDER BY b.dErstellt DESC;';
-            $data->query = $query;
-        }
-
-        return HelperController::selectAll($data);
-    }
-
-    /**
-     * @param stdClass $data
      * @throws Exception
-     * @return AbstractResult
-     */
-    public static function one(stdClass $data): AbstractResult
-    {
-        $result = [];
-        if (strpos($data->id, 'tr_') !== false) {
-            $checkout = PaymentCheckout::fromID($data->id);
-        } else {
-            $checkout = OrderCheckout::fromID($data->id);
-        }
-
-        $checkout->updateModel()->saveModel();
-
-        $result['mollie']     = $checkout->getMollie();
-        $result['order']      = $checkout->getModel()->jsonSerialize();
-        $result['bestellung'] = $checkout->getBestellung();
-        $result['logs'] = PluginHelper::getDB()
-            ->executeQueryPrepared(
-                'SELECT * FROM `xplugin_ws5_mollie_queue` WHERE cType LIKE :cTypeWebhook OR cType LIKE :cTypeHook',
-                [
-                    ':cTypeWebhook' => "%{$checkout->getModel()->cOrderId}%",
-                    ':cTypeHook' => "%:{$checkout->getModel()->kBestellung}%"
-                ],
-                2
-            );
-
-        return new AbstractResult($result);
-    }
-
-    /**
-     * @param stdClass $data
-     * @throws Exception
-     * @return AbstractResult
      */
     public static function get(stdClass $data): AbstractResult
     {
@@ -159,8 +121,8 @@ class OrdersController extends AbstractController
 
     /**
      * @param stdClass $data
-     * @throws Exception
      * @return AbstractResult
+     * @throws Exception
      */
     public static function reminder(stdClass $data): AbstractResult
     {

@@ -19,8 +19,8 @@ use Plugin\ws5_mollie\lib\Checkout\OrderCheckout;
 use Plugin\ws5_mollie\lib\Model\ShipmentsModel;
 use Plugin\ws5_mollie\lib\Traits\RequestData;
 use RuntimeException;
-use WS\JTL5\V1_0_16\Exception\APIException;
-use WS\JTL5\V1_0_16\Traits\Plugins;
+use WS\JTL5\V2_0_5\Exception\APIException;
+use WS\JTL5\V2_0_5\Traits\Plugins;
 
 /**
  * Class Shipment

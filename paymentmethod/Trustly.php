@@ -22,6 +22,6 @@ class Trustly extends PaymentMethod
 
     public function getPaymentOptions(Bestellung $order, $apiType): array
     {
-        return $apiType === 'payment' ? ['billingAddress' => new Address($order->oRechnungsadresse)] : [];
+        return [];
     }
 }

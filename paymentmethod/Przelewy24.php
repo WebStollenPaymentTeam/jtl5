@@ -21,8 +21,6 @@ class Przelewy24 extends PaymentMethod
 
     public function getPaymentOptions(Bestellung $order, $apiType): array
     {
-        $billingAddress = new stdClass();
-        $billingAddress->email = $order->oRechnungsadresse->cMail;
-        return $apiType === 'payment' ? ['billingAddress' => $billingAddress] : [];
+        return [];
     }
 }

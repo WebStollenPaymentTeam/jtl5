@@ -19,8 +19,8 @@ use Plugin\ws5_mollie\lib\Checkout\OrderCheckout;
 use Plugin\ws5_mollie\lib\Checkout\PaymentCheckout;
 use Plugin\ws5_mollie\lib\Model\QueueModel;
 use RuntimeException;
-use WS\JTL5\V1_0_16\Helper\AbstractPluginHelper;
-use WS\JTL5\V1_0_16\Traits\Plugins;
+use WS\JTL5\V2_0_5\Helper\AbstractPluginHelper;
+use WS\JTL5\V2_0_5\Traits\Plugins;
 
 class Queue
 {
@@ -274,7 +274,7 @@ class Queue
                                 }
                             }
 
-                            // Handle Captures for Klarna and Billie Payments that were created via PaymentAPI
+                            // Handle Captures for Klarna, Riverty and Billie Payments that were created via PaymentAPI
                             if (str_contains($checkout->getModel()->cOrderId, 'tr_') && $checkout->getMollie()->captureMode === 'manual') {
                                 /** @var PaymentCheckout $checkout */
                                 $checkout->handleNotification();

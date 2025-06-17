@@ -43,8 +43,8 @@ use Plugin\ws5_mollie\lib\PluginHelper;
 use Plugin\ws5_mollie\lib\Traits\RequestData;
 use RuntimeException;
 use stdClass;
-use WS\JTL5\V1_0_16\Model\ModelInterface;
-use WS\JTL5\V1_0_16\Traits\Plugins;
+use WS\JTL5\V2_0_5\Model\ModelInterface;
+use WS\JTL5\V2_0_5\Traits\Plugins;
 
 /**
  * Class AbstractCheckout
@@ -91,7 +91,7 @@ abstract class AbstractCheckout
      * @param Bestellung     $oBestellung
      * @param null|MollieAPI $api
      */
-    public function __construct(Bestellung $oBestellung, MollieAPI $api = null)
+    public function __construct(Bestellung $oBestellung, ?MollieAPI $api = null)
     {
         $this->oBestellung = $oBestellung;
         $this->api         = $api;
@@ -110,8 +110,10 @@ abstract class AbstractCheckout
     public static function finalizeOrder(string $sessionHash, string $id, bool $test): void
     {
         $logger = Shop::Container()->getLogService();
-        Shop::Container()->getLogService()->debug("Mollie - Webhook called for order: " . $sessionHash);
+
         $startTime = microtime(true);
+        $debug = PluginHelper::getSetting('debugMode');
+        if ($debug) PluginHelper::getLogger()->debug("Mollie - Webhook called for order: " . $sessionHash);
 
         try {
             if ($paymentSession = PluginHelper::getDB()->select('tzahlungsession', 'cZahlungsID', $sessionHash)) {
@@ -122,6 +124,8 @@ abstract class AbstractCheckout
                 } else {
                     $session = Frontend::getInstance(false, false);
                 }
+
+                if ($debug) PluginHelper::getLogger()->debug('Mollie: payment session when webhook is called: ' . json_encode($paymentSession, JSON_PRETTY_PRINT));
 
                 if (
                     (!isset($_SESSION['Warenkorb']->PositionenArr, $paymentSession->nBezahlt, $paymentSession->kBestellung)
@@ -137,13 +141,15 @@ abstract class AbstractCheckout
                         $api->getClient()->orders->get($id, ['embed' => 'payments']);
 
                     if (in_array($mollie->status, [OrderStatus::STATUS_PENDING, OrderStatus::STATUS_AUTHORIZED, OrderStatus::STATUS_PAID], true)) {
+                        if ($debug) PluginHelper::getLogger()->debug('Mollie: order is going to be finalized: ' . $sessionHash);
                         $orderHandler  = new OrderHandler(Shop::Container()->getDB(), Frontend::getCustomer(), Frontend::getCart());
                         $order = $orderHandler->finalizeOrder();
                         $session->cleanUp();
                         $paymentSession->nBezahlt     = 1;
                         $paymentSession->dZeitBezahlt = 'now()';
                     } else if (in_array($mollie->status, [OrderStatus::STATUS_CANCELED, OrderStatus::STATUS_EXPIRED, 'failed'], true)) {
-                        Shop::Container()->getLogService()->debug("Mollie - Order was canceled by Webhook Call: " . $sessionHash);
+                        if ($debug) PluginHelper::getLogger()->debug("Mollie - Order was canceled by Webhook Call: " . $sessionHash);
+
                         PluginHelper::getDB()->executeQueryPrepared('UPDATE xplugin_ws5_mollie_orders SET cStatus = :status WHERE cOrderId = :id', [':status' => $mollie->status, ':id' => $mollie->id]);
                         throw new Exception('Mollie Status invalid: ' . $mollie->status . '\n' . print_r([$sessionHash, $id], 1));
                     } else {
@@ -153,13 +159,16 @@ abstract class AbstractCheckout
                     if ($order->kBestellung) {
                         $paymentSession->kBestellung = $order->kBestellung;
                         PluginHelper::getDB()->update('tzahlungsession', 'cZahlungsID', $sessionHash, $paymentSession);
-
+                        if ($debug) {
+                            $paymentSessionAfterUpdate = PluginHelper::getDB()->select('tzahlungsession', 'cZahlungsID', $sessionHash);
+                            PluginHelper::getLogger()->debug('Mollie: payment session updated after order was finalize: ' . json_encode($paymentSessionAfterUpdate, JSON_PRETTY_PRINT));
+                        }
                         // End time
                         $endTime = microtime(true);
 
                         // Calculate execution time in seconds
                         $executionTime = $endTime - $startTime;
-                        Shop::Container()->getLogService()->debug("Mollie - Order finalized in DB. Execution Time: " . number_format($executionTime, 6) . " seconds");
+                        PluginHelper::getLogger()->debug("Mollie - Order finalized in DB. Execution Time: " . number_format($executionTime, 6) . " seconds");
 
                         try {
                             $checkout = self::fromID($id, false, $order);
@@ -187,6 +196,7 @@ abstract class AbstractCheckout
                             ->handleNotification($sessionHash);
 
                     } else {
+                        if ($debug) PluginHelper::getLogger()->debug('Mollie: no kBestellung after order was finalized: ' . json_encode($order, JSON_PRETTY_PRINT));
                         throw new Exception(sprintf('Bestellung nicht finalisiert: %s', print_r($order, 1)));
                     }
                 } else {
@@ -211,7 +221,7 @@ abstract class AbstractCheckout
      * @throws RuntimeException
      * @return static
      */
-    public static function fromID(string $id, bool $bFill = true, Bestellung $order = null): self
+    public static function fromID(string $id, bool $bFill = true, ?Bestellung $order = null): self
     {
         /** @var OrderModel $model */
         $model = OrderModel::fromID($id, 'cOrderId', true);
@@ -345,11 +355,11 @@ abstract class AbstractCheckout
         try {
             if (PluginHelper::getSetting('syncExpirationDate')) {
                 if ($order = $this->getMollie()) {
-                    if ($this->getBestellung()->kBestellung && isset($order->expiresAt)) {
+                    if ($this->getBestellung()->kBestellung && isset($order->captureBefore)) {
                         $bestellattribut = new stdClass();
                         $bestellattribut->kBestellung = $this->getBestellung()->kBestellung;
                         $bestellattribut->cName = 'mollieOrderExpirationDate';
-                        $bestellattribut->cValue = date("d.m.Y H:i:s", strtotime($order->expiresAt));
+                        $bestellattribut->cValue = date("d.m.Y", strtotime($order->captureBefore));
                         PluginHelper::getDB()->insertRow('tbestellattribut', $bestellattribut);
                     }
                 }
@@ -523,7 +533,7 @@ abstract class AbstractCheckout
      * @param null|MollieAPI $api
      * @return static
      */
-    public static function factory(Bestellung $oBestellung, MollieAPI $api = null): self
+    public static function factory(Bestellung $oBestellung, ?MollieAPI $api = null): self
     {
         return new static($oBestellung, $api);
     }
