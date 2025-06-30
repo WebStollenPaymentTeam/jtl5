@@ -131,6 +131,7 @@ class PaymentCheckout extends AbstractCheckout
             $this->$key = $value;
         }
 
+        // captureMode manual is required for riverty and optional but requested by mollie for the others: https://docs.mollie.com/docs/place-a-hold-for-a-payment
         if (in_array($this->method, [PaymentMethod::KLARNA_ONE, PaymentMethod::KLARNA_SLICE_IT, PaymentMethod::KLARNA_PAY_LATER, PaymentMethod::KLARNA_PAY_NOW, PaymentMethod::BILLIE, PaymentMethod::RIVERTY])) {
             // Set CaptureMode to "manual" for Riverty according to Mollie Api Docs
             $this->captureMode = 'manual';

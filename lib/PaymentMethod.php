@@ -187,7 +187,6 @@ abstract class PaymentMethod extends Method
                     'value'    => number_format($amount, 2, '.', '')
                 ],
                 'billingCountry' => $billingCountry,
-                'resource'       => 'orders',
                 'includeWallets' => 'applepay',
             ]);
             foreach ($active as $a) {

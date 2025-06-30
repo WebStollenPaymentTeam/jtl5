@@ -8,6 +8,7 @@
 namespace Plugin\ws5_mollie\lib\Controller;
 
 use Exception;
+use JTL\Catalog\Currency;
 use JTL\DB\ReturnType;
 use JTL\Plugin\Helper;
 use JTL\Plugin\Payment\LegacyMethod;
@@ -45,44 +46,79 @@ class MollieController extends AbstractController
         }
         $api = new MollieAPI($test);
 
-        $_methods = $api->getClient()->methods->allAvailable([/*'includeWallets' => 'applepay', 'resource' => 'orders'*/]);
+        $_methods_arr = [];
+        // Get methods for default currency EUR
+        $_methods = $api->getClient()->methods->allActive(['includeWallets' => 'applepay']);
+        $_methods_arr['EUR'] = $_methods;
+
+        // Get methods for all other active currencies
+        $currencies = Currency::loadAll();
+        if (is_array($currencies) && count($currencies) > 0) {
+            foreach ($currencies as $currency) {
+                if ($currency->getCode() !== 'EUR') {
+                    $_methods = $api->getClient()->methods->allActive(
+                        [
+                            'includeWallets' => 'applepay',
+                            'amount' => (object)[
+                                'value' => '10.00',
+                                'currency' => $currency->getCode()
+                            ]
+                        ]
+                    );
+                    if ($_methods->count() > 0) {
+                        $_methods_arr[$currency->getCode()] = $_methods;
+                    }
+                }
+            }
+        }
+
         $methods = [];
         $oPlugin = self::Plugin('ws5_mollie');
 
-        foreach ($_methods as $method) {
-            if (in_array($method->id, ['voucher', PaymentMethod::DIRECTDEBIT, PaymentMethod::GIFTCARD], true)) {
-                continue;
-            }
-            $id = 'kPlugin_' . Helper::getIDByPluginID('ws5_mollie') . '_' . $method->id;
-            $oZahlungsart = PluginHelper::getDB()->executeQueryPrepared('SELECT * FROM tzahlungsart WHERE cModulId = :cModulID;', [
-                ':cModulID' => $id
-            ], 1);
+        foreach ($_methods_arr as $iso => $_methods) {
+            foreach ($_methods as $method) {
+                if (in_array($method->id, ['voucher', PaymentMethod::DIRECTDEBIT, PaymentMethod::GIFTCARD], true)) {
+                    continue;
+                }
 
-            // If Mollie has new payment method that we don't support currently
-            if (!$oZahlungsart) {
-                continue;
-            }
+                // Merge different currencies: add currency if method already exist and continue with next element
+                if (array_key_exists($method->id, $methods)) {
+                    $methods[$method->id]->currencies[] = $iso;
+                    continue;
+                }
 
-            $oPaymentMethod = LegacyMethod::create($oZahlungsart->cModulId);
+                $id = 'kPlugin_' . Helper::getIDByPluginID('ws5_mollie') . '_' . $method->id;
+                $oZahlungsart = PluginHelper::getDB()->executeQueryPrepared('SELECT * FROM tzahlungsart WHERE cModulId = :cModulID;', [
+                    ':cModulID' => $id
+                ], 1);
 
-            $methods[$method->id] = (object)[
-                'log' => PluginHelper::getDB()->executeQueryPrepared('SELECT * FROM tzahlungslog WHERE cModulId = :cModulId AND dDatum < DATE_SUB(NOW(), INTERVAL 30 DAY)', [':cModulId' => $oZahlungsart->cModulId], ReturnType::AFFECTED_ROWS),
-                'linkToSettingsPage' => Shop::Container()->getLinkService()->getStaticRoute('/admin/zahlungsarten.php') . "?kZahlungsart=$oZahlungsart->kZahlungsart&token={$_SESSION['jtl_token']}",
-                'mollie' => $method,
-                'duringCheckout' => (int)$oZahlungsart->nWaehrendBestellung === 1,
-                'allowDuringCheckout' => $oPaymentMethod::ALLOW_PAYMENT_BEFORE_ORDER ?? null,
-                'paymentMethod' => $oZahlungsart,
-                'linkedShippingMethods' => PluginHelper::getDB()->executeQueryPrepared('SELECT v.* FROM tversandart v
+                // If Mollie has new payment method that we don't support currently
+                if (!$oZahlungsart) {
+                    continue;
+                }
+
+                $oPaymentMethod = LegacyMethod::create($oZahlungsart->cModulId);
+
+                $methods[$method->id] = (object)[
+                    'log' => PluginHelper::getDB()->executeQueryPrepared('SELECT * FROM tzahlungslog WHERE cModulId = :cModulId AND dDatum < DATE_SUB(NOW(), INTERVAL 30 DAY)', [':cModulId' => $oZahlungsart->cModulId], ReturnType::AFFECTED_ROWS),
+                    'linkToSettingsPage' => Shop::Container()->getLinkService()->getStaticRoute('/admin/zahlungsarten.php') . "?kZahlungsart=$oZahlungsart->kZahlungsart&token={$_SESSION['jtl_token']}",
+                    'mollie' => $method,
+                    'duringCheckout' => (int)$oZahlungsart->nWaehrendBestellung === 1,
+                    'allowDuringCheckout' => $oPaymentMethod::ALLOW_PAYMENT_BEFORE_ORDER ?? null,
+                    'paymentMethod' => $oZahlungsart,
+                    'linkedShippingMethods' => PluginHelper::getDB()->executeQueryPrepared('SELECT v.* FROM tversandart v
 JOIN tversandartzahlungsart vz ON v.kVersandart = vz.kVersandart
 JOIN tzahlungsart z ON vz.kZahlungsart = z.kZahlungsart
 WHERE z.cModulId = :cModulID', [':cModulID' => $id], 2),
-            ];
+                    'currencies' => [$iso]
+                ];
 
-            if ($api = $oPlugin->getConfig()->getValue($id . '_components')) {
-                $methods[$method->id]->components = $api;
-            }
-            if ($dueDays = $oPlugin->getConfig()->getValue($id . '_dueDays')) {
-                $methods[$method->id]->dueDays = (int)$dueDays;
+                if ($api = $oPlugin->getConfig()->getValue($id . '_components')) {
+                    $methods[$method->id]->components = $api;
+                }
+                if ($dueDays = $oPlugin->getConfig()->getValue($id . '_dueDays')) {
+                    $methods[$method->id]->dueDays = (int)$dueDays;
+                }
             }
         }
 
